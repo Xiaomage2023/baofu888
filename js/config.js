@@ -20,12 +20,109 @@ const SITE_CONFIG = {
     version: '1.0.3'
 };
 
+
+// API站点配置
 // API站点配置
 const API_SITES = {
-    testSource: {
-        api: 'https://www.example.com/api.php/provide/vod',
-        name: '空内容测试源',
-        adult: true
+    feifan: {
+        api: 'https://cj.ffzyapi.com/api.php/provide/vod/',
+        name: '飞凡资源'
+    },
+    suoni: {
+        api: 'https://suoniapi.com/api.php/provide/vod/',
+        name: '索尼资源'
+    },
+    tianya: {
+        api: 'https://tyyszy.com/api.php/provide/vod/',
+        name: '天涯资源'
+    },
+    liangzi: {
+        api: 'https://cj.lziapi.com/api.php/provide/vod/',
+        name: '量子资源'
+    },
+    baofeng: {
+        api: 'https://bfzyapi.com/api.php/provide/vod/',
+        name: '暴风资源'
+    },
+    guangsu: {
+        api: 'https://api.guangsuapi.com/api.php/provide/vod/',
+        name: '光速资源'
+    },
+    baidu: {
+        api: 'https://api.apibdzy.com/api.php/provide/vod/',
+        name: '百度资源'
+    },
+    wolong: {
+        api: 'https://collect.wolongzyw.com/api.php/provide/vod/',
+        name: '卧龙资源'
+    },
+    hongniu: {
+        api: 'https://www.hongniuzy2.com/api.php/provide/vod/',
+        name: '红牛资源'
+    },
+    jisu: {
+        api: 'https://jszyapi.com/api.php/provide/vod/',
+        name: '极速资源'
+    },
+    kuaiche: {
+        api: 'https://caiji.kuaichezy.com/api.php/provide/vod/',
+        name: '快车资源'
+    },
+    shandian: {
+        api: 'https://sdzyapi.com/api.php/provide/vod/',
+        name: '闪电资源'
+    },
+    jinying: {
+        api: 'https://jyzyapi.com/api.php/provide/vod/',
+        name: '金鹰资源'
+    },
+    haohua: {
+        api: 'https://hhzyapi.com/api.php/provide/vod/',
+        name: '豪华资源'
+    },
+    wujin: {
+        api: 'https://api.wujinapi.me/api.php/provide/vod/',
+        name: '无尽资源'
+    },
+    uku: {
+        api: 'https://api.ukuapi.com/api.php/provide/vod/',
+        name: 'U酷资源'
+    },
+    zy1080: {
+        api: 'https://api.1080zy.com/api.php/provide/vod/',
+        name: '1080资源'
+    },
+    xinlang: {
+        api: 'https://api.xinlangapi.com/api.php/provide/vod/',
+        name: '新浪资源'
+    },
+    modu: {
+        api: 'https://moduapi.com/api.php/provide/vod/',
+        name: '魔都资源'
+    },
+    heimuer: {
+        api: 'https://json.heimuer.tv/api.php/provide/vod/',
+        name: '黑木耳资源'
+    },
+    qihu: {
+        api: 'https://qihuapi.com/api.php/provide/vod/',
+        name: '奇虎资源'
+    },
+    shenma: {
+        api: 'https://api.shenmazy.com/api.php/provide/vod/',
+        name: '神马资源'
+    },
+    wangwang: {
+        api: 'https://api.wwzy.com/api.php/provide/vod/',
+        name: '旺旺资源'
+    },
+    yinghua: {
+        api: 'https://m3u8.iyinghua.io/api.php/provide/vod/',
+        name: '樱花动漫'
+    },
+    zy4k: {
+        api: 'https://api.4kzy.com/api.php/provide/vod/',
+        name: '4K资源'
     }
     //ARCHIVE https://telegra.ph/APIs-08-12
 };
