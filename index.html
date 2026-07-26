@@ -2,21 +2,19 @@
 <html lang="zh">
 <head>
     <script>
-  // 影视缩略图/海报加载失败自动修复脚本（解决HTTP混合内容、防盗链、无证书问题）
-  document.addEventListener('error', function (e) {
-    if (e.target && e.target.tagName === 'IMG') {
-      var img = e.target;
-      // 检查是否已经尝试过代理，防止死循环
-      if (!img.getAttribute('data-proxy-tried')) {
-        img.setAttribute('data-proxy-tried', 'true');
-        var originalSrc = img.src;
-        if (originalSrc && !originalSrc.startsWith('data:')) {
-          // 使用全球免费 HTTPS 图片代理服务 wsrv.nl 进行中转
-          img.src = 'https://wsrv.nl/?url=' + encodeURIComponent(originalSrc);
-        }
+  // 劫持豆瓣数据请求，走第三方开源 CROS 代理，彻底避免“获取豆瓣数据失败”和“缩略图破图”
+  (function() {
+    var originalFetch = window.fetch;
+    window.fetch = function(url, options) {
+      if (typeof url === 'string' && url.includes('douban')) {
+        // 如果是豆瓣接口，自动拼接免费跨域代理
+        url = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
       }
-    }
-  }, true);
+      return originalFetch.call(this, url, options);
+    };
+  })();
+</script>
+<meta name="referrer" content="no-referrer">
 </script>
 <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
