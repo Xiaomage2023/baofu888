@@ -160,14 +160,19 @@ function planSections(classes, kindById) {
     const plan = [];
     const usedClassIds = new Set();
     const pick = (words, kinds) => {
-        for (const cls of classes) {
-            const id = String(cls.type_id);
-            if (usedClassIds.has(id)) continue;
-            const name = cls.type_name || '';
-            if (!words.some((w) => name.includes(w))) continue;
-            if (kinds && !kinds.includes(kindById[id])) continue;
-            usedClassIds.add(id);
-            return cls;
+        // 先只挑子类（type_pid 非 0）：父类直接拉 videolist 在不少源上是空的
+        for (const pass of [0, 1]) {
+            for (const cls of classes) {
+                const id = String(cls.type_id);
+                if (usedClassIds.has(id)) continue;
+                const isParent = String(cls.type_pid) === '0' || cls.type_pid === 0;
+                if (pass === 0 && isParent) continue;
+                const name = cls.type_name || '';
+                if (!words.some((w) => name.includes(w))) continue;
+                if (kinds && !kinds.includes(kindById[id])) continue;
+                usedClassIds.add(id);
+                return cls;
+            }
         }
         return null;
     };
@@ -197,7 +202,7 @@ function planSections(classes, kindById) {
 // ---------- 单个源的数据构建（可缓存部分） ----------
 
 async function buildSourceData(env, source) {
-    const cacheKey = 'tv:home:' + source.key;
+    const cacheKey = 'tv:home:v2:' + source.key;
     if (hasKv(env)) {
         const cached = await readJson(env, cacheKey, null);
         if (cached && cached.at && (Date.now() - cached.at) < CACHE_TTL_MS
@@ -222,7 +227,15 @@ async function buildSourceData(env, source) {
     const kindById = {};
     classes.forEach((c) => { kindById[String(c.type_id)] = classKind(c, parentById); });
 
-    const latest = normalizeList(listData.list, classNameById).slice(0, 20);
+    // 最新更新改用 videolist 拉全字段（ac=list 的 list 不带海报）；失败回退 list 原数据
+    let latest = [];
+    try {
+        const latestData = await fetchCmsJson(joinQuery(source.api, 'ac=videolist&pg=1'));
+        latest = normalizeList(latestData && latestData.list, classNameById).slice(0, 20);
+    } catch (e) { /* 回退 */ }
+    if (!latest.length) {
+        latest = normalizeList(listData.list, classNameById).slice(0, 20);
+    }
     const plan = planSections(classes, kindById);
 
     const byClass = {};
