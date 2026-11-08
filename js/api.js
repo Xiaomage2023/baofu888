@@ -581,6 +581,14 @@ async function handleMultipleCustomSearch(searchQuery, customApiUrls) {
         const requestUrl = typeof input === 'string' ? new URL(input, window.location.origin) : input.url;
         
         if (requestUrl.pathname.startsWith('/api/')) {
+            // 本地只模拟 /api/search 与 /api/detail 两条老路由；
+            // 其余 /api/*（服务端配置、站点登录、首页推荐、用户、观看上报）
+            // 都是真正的服务端接口，必须放行到网络——以前全被这里拦下
+            // 在本地乱答，导致浏览器里永远拿不到服务器数据。
+            const LOCAL_API_PATHS = ['/api/search', '/api/detail'];
+            if (!LOCAL_API_PATHS.includes(requestUrl.pathname)) {
+                return originalFetch.apply(this, arguments);
+            }
             if (window.isPasswordProtected && window.isPasswordVerified) {
                 if (window.isPasswordProtected() && !window.isPasswordVerified()) {
                     return;
