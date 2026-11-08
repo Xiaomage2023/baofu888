@@ -17,7 +17,7 @@ const SITE_CONFIG = {
     url: 'https://libretv.is-an.org',
     description: '暴富视频搜索与观看平台',
     logo: 'image/logo.png',
-    version: '1.0.3'
+    version: '1.1.0'
 };
 
 
@@ -228,4 +228,58 @@ const HIDE_BUILTIN_ADULT_APIS = false;
         }
         return originalSetAttribute.call(this, name, value);
     };
+})();
+
+// ================= 服务端源合并（管理后台 /api/config） =================
+// 后台在 Cloudflare KV 里保存的自定义源与禁用名单，通过 /api/config 下发。
+// 同步先用 localStorage 缓存 'baofuServerSites' 立即合并（保证设置面板打开时就对），
+// 再异步拉 /api/config 刷新缓存并合并本次新增的源。整段失败不影响原有功能。
+(function mergeServerSites() {
+    try {
+        if (typeof window === 'undefined' || typeof API_SITES === 'undefined') return;
+
+        function applyServerSites(data) {
+            if (!data || typeof data !== 'object') return;
+            var disabled = Array.isArray(data.disabled) ? data.disabled : [];
+            var custom = Array.isArray(data.custom) ? data.custom : [];
+            // 删掉被禁用的源（内置与自定义都按 key 删）
+            disabled.forEach(function (key) {
+                if (API_SITES[key]) delete API_SITES[key];
+            });
+            // 并入未被禁用的自定义源，已存在的 key 不重复加
+            custom.forEach(function (site) {
+                if (!site || !site.key || !site.api) return;
+                if (disabled.indexOf(site.key) !== -1) return;
+                if (!API_SITES[site.key]) {
+                    var entry = { api: site.api, name: site.name || site.key };
+                    if (site.detail) entry.detail = site.detail;
+                    API_SITES[site.key] = entry;
+                }
+            });
+            window.API_SITES = API_SITES;
+        }
+
+        // 1) 同步应用本地缓存
+        try {
+            var cached = localStorage.getItem('baofuServerSites');
+            if (cached) applyServerSites(JSON.parse(cached));
+        } catch (e) { /* 缓存损坏就忽略 */ }
+
+        // 2) 异步刷新服务端最新配置
+        if (typeof fetch === 'function') {
+            fetch('/api/config', { headers: { 'Accept': 'application/json' } })
+                .then(function (resp) { return resp.ok ? resp.json() : null; })
+                .then(function (json) {
+                    if (!json || !json.ok || !json.sources) return;
+                    try {
+                        localStorage.setItem('baofuServerSites', JSON.stringify(json.sources));
+                    } catch (e) { /* 存储失败不影响合并 */ }
+                    applyServerSites(json.sources);
+                    window.__serverSitesUpdated = true;
+                })
+                .catch(function () { /* 拉取失败就用缓存/内置源，绝不影响原有功能 */ });
+        }
+    } catch (e) {
+        // 合并逻辑绝不允许影响原有功能
+    }
 })();

@@ -432,10 +432,13 @@ function renderRecommend(tag, pageLimit, pageStart) {
         })
         .catch(error => {
             console.error("获取豆瓣数据失败：", error);
+            const isAuthError = error && error.code === 'AUTH_401';
             container.innerHTML = `
                 <div class="col-span-full text-center py-8">
                     <div class="text-red-400">❌ 获取豆瓣数据失败，请稍后重试</div>
-                    <div class="text-gray-500 text-sm mt-2">提示：使用VPN可能有助于解决此问题</div>
+                    <div class="text-gray-500 text-sm mt-2">${isAuthError
+                        ? '代理鉴权失败：请检查部署平台的 PASSWORD 设置，或在管理后台确认访问密码'
+                        : '提示：使用VPN可能有助于解决此问题'}</div>
                 </div>
             `;
         });
@@ -467,11 +470,20 @@ async function fetchDoubanData(url) {
         clearTimeout(timeoutId);
         
         if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
+            const httpError = new Error(`HTTP error! Status: ${response.status}`);
+            if (response.status === 401) {
+                // 代理鉴权失败（密码链路对不上），标记出来给上层换提示文案，
+                // 且不再走备用通道（备用通道解决不了鉴权问题）
+                httpError.code = 'AUTH_401';
+            }
+            throw httpError;
         }
         
         return await response.json();
     } catch (err) {
+        if (err && err.code === 'AUTH_401') {
+            throw err;
+        }
         console.error("豆瓣 API 请求失败（直接代理）：", err);
         
         // 失败后尝试备用方法：作为备选

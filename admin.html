@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理后台 - LibreTV</title>
+<style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #0a0a0a; color: #e5e5e5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 16px 14px 48px; }
+    h1 { font-size: 22px; margin: 10px 0 4px; }
+    h1 .pink { color: #ec4899; }
+    .sub { color: #888; font-size: 13px; margin-bottom: 18px; }
+    .card { background: #141414; border: 1px solid #2a2a2a; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .card h2 { font-size: 16px; margin: 0 0 12px; color: #fff; }
+    .card h2 .tag { font-size: 11px; color: #f9a8d4; background: #3b1030; border: 1px solid #701a4d; padding: 1px 7px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+    label { display: block; font-size: 13px; color: #aaa; margin: 10px 0 5px; }
+    input[type="text"], input[type="password"], textarea {
+        width: 100%; background: #1d1d1d; border: 1px solid #333; border-radius: 8px;
+        color: #fff; padding: 10px 12px; font-size: 14px; outline: none;
+    }
+    input:focus, textarea:focus { border-color: #ec4899; }
+    textarea { min-height: 110px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+    button {
+        background: #db2777; color: #fff; border: none; border-radius: 8px;
+        padding: 9px 16px; font-size: 14px; cursor: pointer; margin-top: 10px;
+    }
+    button:hover { background: #be185d; }
+    button.secondary { background: #333; }
+    button.secondary:hover { background: #444; }
+    button.danger { background: #7f1d1d; }
+    button.danger:hover { background: #991b1b; }
+    button.small { padding: 5px 10px; font-size: 12.5px; margin-top: 0; border-radius: 6px; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .hint { font-size: 12.5px; color: #888; line-height: 1.6; }
+    .msg { border-radius: 8px; padding: 10px 12px; font-size: 13.5px; margin: 10px 0; display: none; line-height: 1.6; word-break: break-all; }
+    .msg.ok { display: block; background: #052e16; border: 1px solid #166534; color: #86efac; }
+    .msg.err { display: block; background: #2e0505; border: 1px solid #7f1d1d; color: #fca5a5; }
+    .msg.info { display: block; background: #1e293b; border: 1px solid #334155; color: #cbd5e1; }
+    .source-item { border: 1px solid #262626; background: #191919; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+    .source-item.disabled { opacity: .45; }
+    .source-item .name { font-weight: 600; font-size: 14.5px; }
+    .source-item .api { font-size: 12px; color: #888; word-break: break-all; margin-top: 2px; }
+    .source-item .ops { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .test-result { font-size: 12.5px; margin-left: 4px; }
+    .test-result.good { color: #4ade80; }
+    .test-result.bad { color: #f87171; }
+    .group-title { font-size: 13px; color: #f9a8d4; margin: 14px 0 8px; }
+    .hidden { display: none !important; }
+    a { color: #f472b6; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <div class="topbar">
+        <h1>管理<span class="pink">后台</span></h1>
+        <a href="index.html" class="hint">← 返回首页</a>
+    </div>
+    <p class="sub">改网站访问密码、管理影视资源源（手动添加 / 批量添加 / 从网址导入）。数据保存在 Cloudflare KV，全站所有访客共用同一份配置。</p>
+
+    <div id="globalMsg" class="msg"></div>
+
+    <!-- 登录 -->
+    <div id="loginCard" class="card">
+        <h2>登录</h2>
+        <label for="loginPassword">网站访问密码</label>
+        <input type="password" id="loginPassword" placeholder="输入当前网站访问密码" autocomplete="current-password">
+        <button id="loginBtn">登录</button>
+        <p class="hint">用你平时打开网站时输入的访问密码登录。首次使用请先在部署平台（Cloudflare Pages）设置 PASSWORD 环境变量。</p>
+    </div>
+
+    <div id="adminMain" class="hidden">
+        <!-- ① 网站访问密码 -->
+        <div class="card">
+            <h2>① 网站访问密码</h2>
+            <p class="hint">当前密码来源：<span id="passwordSource">-</span></p>
+            <label for="newPassword">设置新密码（至少 4 位）</label>
+            <input type="password" id="newPassword" placeholder="输入新访问密码" autocomplete="new-password">
+            <div class="row">
+                <button id="setPasswordBtn">保存新密码</button>
+                <button id="resetPasswordBtn" class="secondary">恢复为环境变量密码</button>
+            </div>
+            <p class="hint">在后台设的密码存在 KV 里，优先生效；「恢复为环境变量密码」会删掉 KV 里的密码，改回用部署平台 PASSWORD 环境变量。</p>
+            <label for="siteNameInput">站点名称（可选）</label>
+            <input type="text" id="siteNameInput" placeholder="例如：我的影视站">
+            <button id="setSiteNameBtn" class="secondary">保存站点名称</button>
+        </div>
+
+        <!-- ② 资源源管理 -->
+        <div class="card">
+            <h2>② 资源源管理</h2>
+            <div id="kvWarn" class="msg err hidden"></div>
+            <button id="refreshStateBtn" class="secondary small">刷新列表</button>
+            <div class="group-title">自定义资源源</div>
+            <div id="customList"><p class="hint">加载中…</p></div>
+            <div class="group-title">内置资源源</div>
+            <div id="builtinList"><p class="hint">加载中…</p></div>
+            <p class="hint">「测试」会真实请求一次该源的搜索接口；禁用后全站搜索不再使用该源（内置源不能删除，只能禁用）。</p>
+        </div>
+
+        <!-- ③ 手动添加 -->
+        <div class="card">
+            <h2>③ 手动添加资源源</h2>
+            <label for="addName">名称</label>
+            <input type="text" id="addName" placeholder="例如：某某资源">
+            <label for="addApi">API 地址（苹果 CMS 采集接口）</label>
+            <input type="text" id="addApi" placeholder="https://example.com/api.php/provide/vod/">
+            <label for="addDetail">详情地址（可选）</label>
+            <input type="text" id="addDetail" placeholder="可留空">
+            <button id="addSourceBtn">添加</button>
+            <div id="addMsg" class="msg"></div>
+        </div>
+
+        <!-- ④ 批量添加 -->
+        <div class="card">
+            <h2>④ 批量添加 / 导入</h2>
+            <label for="batchText">批量文本（三种格式都认）</label>
+            <textarea id="batchText" placeholder="每行一个：名称,API地址&#10;或只有 API 地址一行一个&#10;也可以直接粘贴 JSON 数组 [{&quot;name&quot;:&quot;…&quot;,&quot;api&quot;:&quot;…&quot;}]&#10;或配置对象 {&quot;api_site&quot;:{&quot;key&quot;:{&quot;name&quot;:&quot;…&quot;,&quot;api&quot;:&quot;…&quot;}}}"></textarea>
+            <button id="batchAddBtn">批量添加</button>
+            <label for="importUrl">从网址导入（对方返回上面任意一种格式的文本/JSON）</label>
+            <input type="text" id="importUrl" placeholder="https://example.com/sources.json">
+            <button id="importUrlBtn" class="secondary">从网址导入</button>
+            <div id="batchMsg" class="msg"></div>
+        </div>
+
+        <button id="logoutBtn" class="secondary">退出登录</button>
+    </div>
+</div>
+<script src="js/admin.js"></script>
+</body>
+</html>

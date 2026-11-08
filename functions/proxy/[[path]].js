@@ -78,22 +78,45 @@ export async function onRequest(context) {
         const authHash = url.searchParams.get('auth');
         const timestamp = url.searchParams.get('t');
         
-        // 获取服务器端密码
-        const serverPassword = env.PASSWORD;
-        if (!serverPassword) {
-            console.error('服务器未设置 PASSWORD 环境变量，代理访问被拒绝');
-            return false;
-        }
-        
-        // 使用 SHA-256 哈希算法（与其他平台保持一致）
-        // 在 Cloudflare Workers 中使用 crypto.subtle
+        // 获取有效密码哈希：优先用 KV 中后台保存的密码（tv:site.passwordHash），
+        // 没有时回退到环境变量 PASSWORD
+        let serverPasswordHash = '';
         try {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(serverPassword);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            const serverPasswordHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-            
+            if (env.TV_KV) {
+                const rawSite = await env.TV_KV.get('tv:site');
+                if (rawSite) {
+                    const site = JSON.parse(rawSite);
+                    if (site && site.passwordHash) {
+                        serverPasswordHash = site.passwordHash;
+                    }
+                }
+            }
+        } catch (e) {
+            // KV 读取失败时回退到环境变量密码
+        }
+
+        if (!serverPasswordHash) {
+            const serverPassword = env.PASSWORD;
+            if (!serverPassword) {
+                console.error('服务器未设置 PASSWORD 环境变量（且 KV 中无后台密码），代理访问被拒绝');
+                return false;
+            }
+
+            // 使用 SHA-256 哈希算法（与其他平台保持一致）
+            // 在 Cloudflare Workers 中使用 crypto.subtle
+            try {
+                const encoder = new TextEncoder();
+                const data = encoder.encode(serverPassword);
+                const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                serverPasswordHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            } catch (error) {
+                console.error('计算密码哈希失败:', error);
+                return false;
+            }
+        }
+
+        try {
             if (!authHash || authHash !== serverPasswordHash) {
                 console.warn('代理请求鉴权失败：密码哈希不匹配');
                 return false;
