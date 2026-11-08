@@ -81,8 +81,20 @@
         if (!container) return;
         container.innerHTML = '<div style="color:#888;font-size:13px;padding:12px 2px;">加载推荐中…</div>';
         try {
-            var resp = await fetch('/api/home', { headers: { 'Accept': 'application/json' } });
-            var data = await resp.json();
+            // 部署刚切换/源站偶发超时会让第一次请求拿到空结果，自动重试一次再放弃
+            var data = null;
+            for (var attempt = 0; attempt < 2; attempt++) {
+                try {
+                    var resp = await fetch('/api/home', { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+                    data = await resp.json();
+                } catch (fetchErr) {
+                    data = null;
+                }
+                if (data && data.ok && Array.isArray(data.sections) && data.sections.length) break;
+                if (attempt === 0) {
+                    await new Promise(function (r) { setTimeout(r, 2500); });
+                }
+            }
             if (!data || !data.ok || !Array.isArray(data.sections) || !data.sections.length) {
                 container.innerHTML = '<div style="color:#f87171;font-size:13.5px;padding:12px 2px;">' +
                     '推荐暂时加载不出来' + (data && data.error ? '：' + esc(data.error) : '') + '</div>';

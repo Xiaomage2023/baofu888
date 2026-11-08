@@ -34,34 +34,9 @@ async function checkForUpdates() {
             cache: 'no-store'
         });
         
-        // 获取最新版本
-        let latestVersion;
-        const VERSION_URL = {
-            PROXY: 'https://ghfast.top/raw.githubusercontent.com/LibreSpark/LibreTV/main/VERSION.txt',
-            DIRECT: 'https://raw.githubusercontent.com/LibreSpark/LibreTV/main/VERSION.txt'
-        };
-        const FETCH_TIMEOUT = 1500;
-        
-        try {
-            // 尝试使用代理URL获取最新版本
-            const proxyPromise = fetchVersion(VERSION_URL.PROXY, '代理请求失败');
-            const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('代理请求超时')), FETCH_TIMEOUT)
-            );
-            
-            latestVersion = await Promise.race([proxyPromise, timeoutPromise]);
-            console.log('通过代理服务器获取版本成功');
-        } catch (error) {
-            console.log('代理请求失败，尝试直接请求:', error.message);
-            try {
-                // 代理失败后尝试直接获取
-                latestVersion = await fetchVersion(VERSION_URL.DIRECT, '获取最新版本失败');
-                console.log('直接请求获取版本成功');
-            } catch (directError) {
-                console.error('所有版本检查请求均失败:', directError);
-                throw new Error('无法获取最新版本信息');
-            }
-        }
+        // 不再去 GitHub 拉上游版本号对比：国内网络基本连不上、只会误报“检测失败”。
+        // 本站版本由部署直接更新，页脚如实显示本站当前版本即可。
+        const latestVersion = currentVersion;
         
         console.log('当前版本:', currentVersion);
         console.log('最新版本:', latestVersion);
