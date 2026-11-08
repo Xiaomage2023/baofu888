@@ -44,8 +44,22 @@ const BUILTIN_SITES = [
 ];
 
 const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
-const CACHE_TTL_MS = 20 * 60 * 1000;
 const SECTION_LIMIT = 14;
+
+// 首页数据一天刷新三次：北京时间 06:00 / 12:00 / 18:00。
+// 缓存只要是“最近一个刷新点之后”生成的就有效；过了下一个刷新点，
+// 第一个打开首页的请求会重新拉取并回填缓存。
+function lastRefreshBoundary(nowMs) {
+    const OFFSET = 8 * 3600 * 1000; // 北京时间 UTC+8
+    const bj = new Date(nowMs + OFFSET);
+    const y = bj.getUTCFullYear(), m = bj.getUTCMonth(), d = bj.getUTCDate();
+    for (const h of [18, 12, 6]) {
+        const t = Date.UTC(y, m, d, h, 0, 0) - OFFSET;
+        if (nowMs >= t) return t;
+    }
+    const prev = new Date(Date.UTC(y, m, d) - 86400000);
+    return Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth(), prev.getUTCDate(), 18, 0, 0) - OFFSET;
+}
 
 function jsonResponse(data, status = 200) {
     return new Response(JSON.stringify(data), {
@@ -109,7 +123,8 @@ function normalizeItem(item, classNameById) {
         poster: String(item.vod_pic || ''),
         remarks: String(item.vod_remarks || ''),
         type: String(item.vod_type_name || (item.type_id !== undefined && classNameById ? (classNameById[String(item.type_id)] || '') : '') || ''),
-        year: String(item.vod_year || '')
+        year: String(item.vod_year || ''),
+        time: String(item.vod_time || '')
     };
 }
 
@@ -120,6 +135,8 @@ function normalizeList(list, classNameById) {
         const n = normalizeItem(item, classNameById);
         if (n && n.title) out.push(n);
     });
+    // 每个分区一律按更新时间从新到旧排（vod_time 为 "YYYY-MM-DD HH:mm:ss"，字符串可直接比）
+    out.sort((a, b) => (a.time < b.time ? 1 : a.time > b.time ? -1 : 0));
     return out;
 }
 
@@ -202,10 +219,10 @@ function planSections(classes, kindById) {
 // ---------- 单个源的数据构建（可缓存部分） ----------
 
 async function buildSourceData(env, source) {
-    const cacheKey = 'tv:home:v2:' + source.key;
+    const cacheKey = 'tv:home:v3:' + source.key;
     if (hasKv(env)) {
         const cached = await readJson(env, cacheKey, null);
-        if (cached && cached.at && (Date.now() - cached.at) < CACHE_TTL_MS
+        if (cached && cached.at && cached.at >= lastRefreshBoundary(Date.now())
             && Array.isArray(cached.classes) && Array.isArray(cached.latest) && cached.byClass) {
             return cached;
         }
