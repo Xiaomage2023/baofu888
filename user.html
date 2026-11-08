@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用户中心 - LibreTV</title>
+<style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #0a0a0a; color: #e5e5e5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 16px 14px 48px; }
+    h1 { font-size: 22px; margin: 10px 0 4px; }
+    h1 .pink { color: #ec4899; }
+    .sub { color: #888; font-size: 13px; margin-bottom: 18px; }
+    .card { background: #141414; border: 1px solid #2a2a2a; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .card h2 { font-size: 16px; margin: 0 0 12px; color: #fff; }
+    label { display: block; font-size: 13px; color: #aaa; margin: 10px 0 5px; }
+    input[type="text"], input[type="password"] {
+        width: 100%; background: #1d1d1d; border: 1px solid #333; border-radius: 8px;
+        color: #fff; padding: 10px 12px; font-size: 14px; outline: none;
+    }
+    input:focus { border-color: #ec4899; }
+    button {
+        background: #db2777; color: #fff; border: none; border-radius: 8px;
+        padding: 9px 16px; font-size: 14px; cursor: pointer; margin-top: 10px;
+    }
+    button:hover { background: #be185d; }
+    button.secondary { background: #333; }
+    button.secondary:hover { background: #444; }
+    button.small { padding: 5px 10px; font-size: 12.5px; margin-top: 0; border-radius: 6px; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .hint { font-size: 12.5px; color: #888; line-height: 1.6; }
+    .msg { border-radius: 8px; padding: 10px 12px; font-size: 13.5px; margin: 10px 0; display: none; line-height: 1.6; word-break: break-all; }
+    .msg.ok { display: block; background: #052e16; border: 1px solid #166534; color: #86efac; }
+    .msg.err { display: block; background: #2e0505; border: 1px solid #7f1d1d; color: #fca5a5; }
+    .msg.info { display: block; background: #1e293b; border: 1px solid #334155; color: #cbd5e1; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 6px; }
+    .tabs button { background: #262626; margin-top: 0; }
+    .tabs button.active { background: #db2777; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stat { background: #191919; border: 1px solid #262626; border-radius: 10px; padding: 10px 12px; }
+    .stat .k { font-size: 12px; color: #888; }
+    .stat .v { font-size: 16px; color: #fff; margin-top: 3px; word-break: break-all; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 2px; }
+    .chip {
+        background: #262626; color: #ddd; border: 1px solid #3a3a3a; border-radius: 999px;
+        padding: 6px 14px; font-size: 13px; cursor: pointer; margin-top: 0;
+    }
+    .chip.on { background: #db2777; border-color: #db2777; color: #fff; }
+    .hist-item { display: flex; gap: 10px; border: 1px solid #262626; background: #191919; border-radius: 10px; padding: 10px; margin-bottom: 8px; }
+    .hist-item img { width: 52px; height: 78px; object-fit: cover; border-radius: 6px; background: #222; flex: 0 0 auto; }
+    .hist-item .t { font-weight: 600; font-size: 14.5px; color: #fff; }
+    .hist-item .m { font-size: 12px; color: #999; margin-top: 3px; line-height: 1.55; }
+    .hidden { display: none !important; }
+    a { color: #f472b6; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <div class="topbar">
+        <h1>用户<span class="pink">中心</span></h1>
+        <a href="index.html" class="hint">← 返回首页</a>
+    </div>
+    <p class="sub">登录后可以定制你的首页推荐，并同步观看记录，换设备也能继续看。</p>
+
+    <div id="globalMsg" class="msg"></div>
+
+    <!-- 登录 / 注册 -->
+    <div id="authCard" class="card">
+        <div class="tabs">
+            <button id="tabLogin" class="active">登录</button>
+            <button id="tabRegister">注册</button>
+        </div>
+        <label for="authUsername">用户名</label>
+        <input type="text" id="authUsername" placeholder="2-20 个字符，中文/字母/数字/下划线" autocomplete="username">
+        <label for="authPassword">密码</label>
+        <input type="password" id="authPassword" placeholder="至少 4 位" autocomplete="current-password">
+        <button id="authSubmitBtn">登录</button>
+        <p class="hint" id="authHint">还没有账号？点上面「注册」切换。账号与网站访问密码无关，是你自己的个人账号。</p>
+    </div>
+
+    <div id="userMain" class="hidden">
+        <!-- 我的数据 -->
+        <div class="card">
+            <h2>👤 <span id="helloUser">我</span>的数据</h2>
+            <div class="stats">
+                <div class="stat"><div class="k">登录次数</div><div class="v" id="statLoginCount">-</div></div>
+                <div class="stat"><div class="k">最近登录</div><div class="v" id="statLastLogin">-</div></div>
+                <div class="stat"><div class="k">累计在线</div><div class="v" id="statOnline">-</div></div>
+                <div class="stat"><div class="k">累计观看</div><div class="v" id="statWatch">-</div></div>
+            </div>
+        </div>
+
+        <!-- 首页定制 -->
+        <div class="card">
+            <h2>🎯 首页定制</h2>
+            <p class="hint">选你爱看的地区和类型，首页会把对应分区排到前面，并生成「为你推荐」。不选就是默认顺序。</p>
+            <label>喜欢的地区</label>
+            <div class="chips" id="areaChips"></div>
+            <label>喜欢的类型</label>
+            <div class="chips" id="kindChips"></div>
+            <button id="savePrefsBtn">保存定制</button>
+        </div>
+
+        <!-- 观看历史 -->
+        <div class="card">
+            <h2>🕘 我的观看历史</h2>
+            <div id="historyList"><p class="hint">加载中…</p></div>
+        </div>
+
+        <!-- 改密码 / 退出 -->
+        <div class="card">
+            <h2>🔑 修改密码</h2>
+            <label for="oldPassword">原密码</label>
+            <input type="password" id="oldPassword" autocomplete="current-password">
+            <label for="newPassword">新密码（至少 4 位）</label>
+            <input type="password" id="newPassword" autocomplete="new-password">
+            <div class="row">
+                <button id="changePasswordBtn">保存新密码</button>
+                <button id="logoutBtn" class="secondary">退出登录</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="js/user.js"></script>
+<script src="js/tracker.js"></script>
+</body>
+</html>

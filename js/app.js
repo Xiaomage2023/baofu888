@@ -1033,7 +1033,8 @@ function showVideoPlayer(url) {
     }
     // 临时隐藏搜索结果和豆瓣区域，防止高度超出播放器而出现滚动条
     document.getElementById('resultsArea').classList.add('hidden');
-    document.getElementById('doubanArea').classList.add('hidden');
+    const doubanAreaEl = document.getElementById('doubanArea');
+    if (doubanAreaEl) doubanAreaEl.classList.add('hidden');
     // 在框架中打开播放页面
     videoPlayerFrame = document.createElement('iframe');
     videoPlayerFrame.id = 'VideoPlayerFrame';
@@ -1056,9 +1057,10 @@ function closeVideoPlayer(home = false) {
         if (detailModal) {
             detailModal.classList.add('hidden');
         }
-        // 如果启用豆瓣区域则显示豆瓣区域
+        // 如果启用豆瓣区域则显示豆瓣区域（豆瓣区已下线，元素可能不存在）
         if (localStorage.getItem('doubanEnabled') === 'true') {
-            document.getElementById('doubanArea').classList.remove('hidden');
+            const doubanAreaEl2 = document.getElementById('doubanArea');
+            if (doubanAreaEl2) doubanAreaEl2.classList.remove('hidden');
         }
     }
     if (home) {

@@ -141,6 +141,22 @@
             <div id="batchMsg" class="msg"></div>
         </div>
 
+        <!-- ⑤ 用户管理 -->
+        <div class="card">
+            <h2>⑤ 用户管理</h2>
+            <p class="hint" id="userOverview">加载中…</p>
+            <div class="row">
+                <button id="refreshUsersBtn" class="secondary small">刷新用户列表</button>
+                <button id="toggleRegisterBtn" class="secondary small">注册开关：-</button>
+            </div>
+            <div class="group-title">全站热播 Top 10</div>
+            <div id="hotList"><p class="hint">加载中…</p></div>
+            <div class="group-title">注册用户</div>
+            <div id="userList"><p class="hint">加载中…</p></div>
+            <div id="userDetail" class="hidden" style="margin-top:12px;"></div>
+            <p class="hint">禁用后该用户立刻无法登录、已有会话也会失效；删除会连同其观看历史一并清除。用户在站内产生的在线/观看时长由前端定时上报，存在 KV 里。</p>
+        </div>
+
         <button id="logoutBtn" class="secondary">退出登录</button>
     </div>
 </div>

@@ -17,6 +17,11 @@
 //   引导 token 和引导登录立即失效。
 
 import { sha256 } from '../../js/sha256.js';
+import {
+    loadUser as loadSiteUser, saveUser as saveSiteUser,
+    loadUserIndex, saveUserIndex, hashUserPassword,
+    loadHistory, historyToArray, loadHot, deleteKey as deleteKvKey
+} from '../../js/userstore.js';
 
 // 内置资源源名单：与 js/config.js 的 API_SITES + js/customer_site.js 的
 // CUSTOMER_SITES 保持同步（增删内置源时两边一起改）。
@@ -302,6 +307,7 @@ async function buildState(env) {
         hasKv: !!env.TV_KV,
         passwordSource: hash ? source : 'env',
         siteName: site.siteName || '',
+        allowRegister: site.allowRegister !== false,
         admin: {
             custom: !!admin,
             username: admin ? admin.username : null
@@ -400,7 +406,7 @@ export async function onRequestPost(context) {
         return jsonResponse({ ok: false, error: '未登录或登录已失效，请重新登录' }, 401);
     }
 
-    const needsKv = ['setAdmin', 'setPassword', 'resetPassword', 'setSiteName', 'addSource', 'batchAddSources', 'importFromUrl', 'updateSource', 'deleteSource', 'toggleSource'];
+    const needsKv = ['setAdmin', 'setPassword', 'resetPassword', 'setSiteName', 'addSource', 'batchAddSources', 'importFromUrl', 'updateSource', 'deleteSource', 'toggleSource', 'listUsers', 'userDetail', 'userSetDisabled', 'userDelete', 'userResetPassword', 'setAllowRegister'];
     if (needsKv.includes(action) && !env.TV_KV) {
         return kvNotBound();
     }
@@ -575,6 +581,100 @@ export async function onRequestPost(context) {
                 }
                 await writeSources(env, store);
                 return jsonResponse({ ok: true, disabled });
+            }
+
+            // ---------- 用户管理（用户系统见 js/userstore.js） ----------
+
+            case 'listUsers': {
+                const index = await loadUserIndex(env);
+                const users = [];
+                let totalWatchSec = 0;
+                for (const username of index) {
+                    const u = await loadSiteUser(env, username);
+                    if (!u) continue;
+                    totalWatchSec += u.watchSec || 0;
+                    users.push({
+                        username: u.username,
+                        createdAt: u.createdAt || 0,
+                        lastLoginAt: u.lastLoginAt || 0,
+                        lastSeenAt: u.lastSeenAt || 0,
+                        loginCount: u.loginCount || 0,
+                        onlineSec: u.onlineSec || 0,
+                        watchSec: u.watchSec || 0,
+                        disabled: !!u.disabled,
+                        prefs: u.prefs || { areas: [], kinds: [] }
+                    });
+                }
+                const hotMap = await loadHot(env);
+                const hot = Object.values(hotMap)
+                    .sort((a, b) => ((b.plays || 0) - (a.plays || 0)) || ((b.watchSec || 0) - (a.watchSec || 0)))
+                    .slice(0, 10);
+                return jsonResponse({
+                    ok: true,
+                    users,
+                    overview: { userCount: users.length, totalWatchSec, hot }
+                });
+            }
+
+            case 'userDetail': {
+                const username = typeof body.username === 'string' ? body.username : '';
+                const u = await loadSiteUser(env, username);
+                if (!u) return jsonResponse({ ok: false, error: '没找到这个用户' });
+                const hist = await loadHistory(env, username);
+                return jsonResponse({
+                    ok: true,
+                    user: {
+                        username: u.username,
+                        createdAt: u.createdAt || 0,
+                        lastLoginAt: u.lastLoginAt || 0,
+                        lastSeenAt: u.lastSeenAt || 0,
+                        loginCount: u.loginCount || 0,
+                        onlineSec: u.onlineSec || 0,
+                        watchSec: u.watchSec || 0,
+                        disabled: !!u.disabled,
+                        prefs: u.prefs || { areas: [], kinds: [] }
+                    },
+                    history: historyToArray(hist)
+                });
+            }
+
+            case 'userSetDisabled': {
+                const username = typeof body.username === 'string' ? body.username : '';
+                const u = await loadSiteUser(env, username);
+                if (!u) return jsonResponse({ ok: false, error: '没找到这个用户' });
+                u.disabled = !!body.disabled;
+                await saveSiteUser(env, u);
+                return jsonResponse({ ok: true, disabled: u.disabled });
+            }
+
+            case 'userDelete': {
+                const username = typeof body.username === 'string' ? body.username : '';
+                const u = await loadSiteUser(env, username);
+                if (!u) return jsonResponse({ ok: false, error: '没找到这个用户' });
+                await deleteKvKey(env, 'tv:user:' + username);
+                await deleteKvKey(env, 'tv:history:' + username);
+                const index = await loadUserIndex(env);
+                await saveUserIndex(env, index.filter((x) => x !== username));
+                // 该用户的会话记录不逐条删：会话校验时会因用户记录不存在而失效
+                return jsonResponse({ ok: true });
+            }
+
+            case 'userResetPassword': {
+                const username = typeof body.username === 'string' ? body.username : '';
+                const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';
+                if (newPassword.length < 4) return jsonResponse({ ok: false, error: '新密码至少 4 位' });
+                const u = await loadSiteUser(env, username);
+                if (!u) return jsonResponse({ ok: false, error: '没找到这个用户' });
+                u.passHash = await hashUserPassword(newPassword, username);
+                await saveSiteUser(env, u);
+                return jsonResponse({ ok: true });
+            }
+
+            case 'setAllowRegister': {
+                const site = await readSite(env);
+                site.allowRegister = !!body.allow;
+                await writeSite(env, site);
+                return jsonResponse({ ok: true, allowRegister: site.allowRegister });
             }
 
             case 'testSource': {

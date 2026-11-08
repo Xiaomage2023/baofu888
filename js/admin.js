@@ -105,6 +105,7 @@
             }
             state = data;
             renderState();
+            refreshUsers();
         } catch (e) {
             globalMsg('读取状态失败：' + e.message, 'err');
         }
@@ -303,6 +304,156 @@
         } catch (e) { showMsg($('batchMsg'), '导入失败：' + e.message, 'err'); }
     }
 
+    // ---------- ⑤ 用户管理 ----------
+
+    function fmtDur(sec) {
+        sec = Math.max(0, Math.floor(Number(sec) || 0));
+        var h = Math.floor(sec / 3600);
+        var m = Math.round((sec % 3600) / 60);
+        if (m === 60) { h += 1; m = 0; }
+        if (h > 0) return h + '小时' + m + '分';
+        if (m > 0) return m + '分钟';
+        return sec + '秒';
+    }
+
+    function fmtTime(ts) {
+        if (!ts) return '-';
+        try { return new Date(ts).toLocaleString('zh-CN', { hour12: false }); } catch (e) { return '-'; }
+    }
+
+    async function refreshUsers() {
+        try {
+            var data = await authedCall({ action: 'listUsers' });
+            if (!data.ok) {
+                $('userOverview').textContent = '用户列表读取失败：' + (data.message || data.error || '未知错误');
+                return;
+            }
+            renderUsers(data);
+        } catch (e) {
+            $('userOverview').textContent = '用户列表读取失败：' + e.message;
+        }
+    }
+
+    function renderUsers(data) {
+        var overview = data.overview || { userCount: 0, totalWatchSec: 0, hot: [] };
+        $('userOverview').textContent = '共 ' + (overview.userCount || 0) + ' 个注册用户 · 全站累计观看 ' + fmtDur(overview.totalWatchSec);
+        $('toggleRegisterBtn').textContent = '注册开关：' + ((state && state.allowRegister === false) ? '已关闭' : '开放中');
+
+        var hotEl = $('hotList');
+        hotEl.innerHTML = '';
+        var hot = overview.hot || [];
+        if (!hot.length) {
+            hotEl.innerHTML = '<p class="hint">还没有播放数据。</p>';
+        } else {
+            hot.forEach(function (h, i) {
+                var div = document.createElement('div');
+                div.className = 'hint';
+                div.style.cssText = 'padding:3px 0;color:#ccc;';
+                div.textContent = (i + 1) + '. 《' + (h.title || h.id || '') + '》播放 ' + (h.plays || 0) + ' 次 · 累计观看 ' + fmtDur(h.watchSec);
+                hotEl.appendChild(div);
+            });
+        }
+
+        var listEl = $('userList');
+        listEl.innerHTML = '';
+        var users = data.users || [];
+        if (!users.length) {
+            listEl.innerHTML = '<p class="hint">还没有注册用户。</p>';
+            return;
+        }
+        users.forEach(function (u) {
+            var item = document.createElement('div');
+            item.className = 'source-item' + (u.disabled ? ' disabled' : '');
+            var prefsText = '';
+            if (u.prefs && ((u.prefs.areas || []).length || (u.prefs.kinds || []).length)) {
+                prefsText = ' · 定制：' + [].concat(u.prefs.areas || [], u.prefs.kinds || []).join('/');
+            }
+            item.innerHTML =
+                '<div class="name">' + esc(u.username) + (u.disabled ? '（已禁用）' : '') + '</div>' +
+                '<div class="api">登录 ' + (u.loginCount || 0) + ' 次 · 在线 ' + fmtDur(u.onlineSec) +
+                ' · 观看 ' + fmtDur(u.watchSec) + '<br>最近活跃：' + esc(fmtTime(u.lastSeenAt)) + esc(prefsText) + '</div>' +
+                '<div class="ops">' +
+                '<button class="small secondary" data-act="detail">详情</button>' +
+                '<button class="small secondary" data-act="toggle">' + (u.disabled ? '启用' : '禁用') + '</button>' +
+                '<button class="small secondary" data-act="reset">重置密码</button>' +
+                '<button class="small danger" data-act="del">删除</button>' +
+                '</div>';
+            item.querySelector('[data-act="detail"]').addEventListener('click', function () { showUserDetail(u.username); });
+            item.querySelector('[data-act="toggle"]').addEventListener('click', async function () {
+                try {
+                    var d = await authedCall({ action: 'userSetDisabled', username: u.username, disabled: !u.disabled });
+                    if (!d.ok) { globalMsg(d.message || d.error || '操作失败', 'err'); return; }
+                    await refreshUsers();
+                } catch (e) { globalMsg('操作失败：' + e.message, 'err'); }
+            });
+            item.querySelector('[data-act="reset"]').addEventListener('click', async function () {
+                var np = prompt('给用户「' + u.username + '」设置新密码（至少 4 位）：');
+                if (!np) return;
+                try {
+                    var d = await authedCall({ action: 'userResetPassword', username: u.username, newPassword: np });
+                    if (!d.ok) { globalMsg(d.message || d.error || '重置失败', 'err'); return; }
+                    globalMsg('已重置「' + u.username + '」的密码。', 'ok');
+                } catch (e) { globalMsg('重置失败：' + e.message, 'err'); }
+            });
+            item.querySelector('[data-act="del"]').addEventListener('click', async function () {
+                if (!confirm('确定删除用户「' + u.username + '」？其观看历史会一并删除。')) return;
+                try {
+                    var d = await authedCall({ action: 'userDelete', username: u.username });
+                    if (!d.ok) { globalMsg(d.message || d.error || '删除失败', 'err'); return; }
+                    $('userDetail').classList.add('hidden');
+                    await refreshUsers();
+                } catch (e) { globalMsg('删除失败：' + e.message, 'err'); }
+            });
+            listEl.appendChild(item);
+        });
+    }
+
+    async function showUserDetail(username) {
+        var box = $('userDetail');
+        box.classList.remove('hidden');
+        box.innerHTML = '<p class="hint">加载「' + esc(username) + '」的详情…</p>';
+        try {
+            var data = await authedCall({ action: 'userDetail', username: username });
+            if (!data.ok) { box.innerHTML = '<p class="hint">读取失败：' + esc(data.message || data.error || '') + '</p>'; return; }
+            var u = data.user || {};
+            var prefs = u.prefs || { areas: [], kinds: [] };
+            var html = '<div class="group-title" style="margin-top:0;">用户详情：' + esc(u.username) + '</div>' +
+                '<p class="hint">注册：' + esc(fmtTime(u.createdAt)) + ' · 登录 ' + (u.loginCount || 0) + ' 次 · 最近登录：' + esc(fmtTime(u.lastLoginAt)) +
+                '<br>累计在线 ' + fmtDur(u.onlineSec) + ' · 累计观看 ' + fmtDur(u.watchSec) +
+                '<br>首页定制 — 地区：' + esc((prefs.areas || []).join('、') || '未设置') +
+                '；类型：' + esc((prefs.kinds || []).join('、') || '未设置') + '</p>';
+            var history = data.history || [];
+            if (!history.length) {
+                html += '<p class="hint">暂无观看历史。</p>';
+            } else {
+                html += '<div class="group-title">观看历史（' + history.length + ' 条）</div>';
+                history.forEach(function (h) {
+                    var ep = h.episodeLabel || (h.episode ? '第' + h.episode + '集' : '');
+                    html += '<div class="hint" style="padding:4px 0;border-bottom:1px solid #222;color:#ccc;">《' + esc(h.title || h.id || '') + '》' +
+                        (ep ? ' ' + esc(ep) : '') +
+                        ' · 看到 ' + fmtDur(h.positionSec) +
+                        ' · 累计观看 ' + fmtDur(h.watchedSec) +
+                        ' · 播放 ' + (h.plays || 0) + ' 次' +
+                        '<br><span style="color:#777;">最后观看：' + esc(fmtTime(h.lastAt)) + '</span></div>';
+                });
+            }
+            box.innerHTML = html;
+        } catch (e) {
+            box.innerHTML = '<p class="hint">读取失败：' + esc(e.message) + '</p>';
+        }
+    }
+
+    async function doToggleRegister() {
+        var allow = !(state && state.allowRegister === false);
+        try {
+            var data = await authedCall({ action: 'setAllowRegister', allow: !allow });
+            if (!data.ok) { globalMsg(data.message || data.error || '设置失败', 'err'); return; }
+            if (state) state.allowRegister = data.allowRegister;
+            $('toggleRegisterBtn').textContent = '注册开关：' + (data.allowRegister ? '开放中' : '已关闭');
+            globalMsg(data.allowRegister ? '注册已开放。' : '注册已关闭，新用户不能再注册（已有用户不受影响）。', 'ok');
+        } catch (e) { globalMsg('设置失败：' + e.message, 'err'); }
+    }
+
     // ---------- 绑定与初始化 ----------
 
     function bind() {
@@ -314,6 +465,8 @@
         $('resetPasswordBtn').addEventListener('click', doResetPassword);
         $('setSiteNameBtn').addEventListener('click', doSetSiteName);
         $('refreshStateBtn').addEventListener('click', refreshState);
+        $('refreshUsersBtn').addEventListener('click', refreshUsers);
+        $('toggleRegisterBtn').addEventListener('click', doToggleRegister);
         $('addSourceBtn').addEventListener('click', doAddSource);
         $('batchAddBtn').addEventListener('click', doBatchAdd);
         $('importUrlBtn').addEventListener('click', doImportUrl);
