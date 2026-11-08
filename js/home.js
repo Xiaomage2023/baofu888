@@ -76,42 +76,68 @@
         return wrap;
     }
 
+    var HOME_LS_KEY = 'homeCacheV1';
+
+    function renderSections(container, data) {
+        var sourceKey = data.source ? data.source.key : '';
+        container.innerHTML = '';
+        (data.sections || []).forEach(function (section) {
+            if (section.items && section.items.length) {
+                container.appendChild(makeSection(section, sourceKey));
+            }
+        });
+        return container.children.length > 0;
+    }
+
     async function loadHome() {
         var container = document.getElementById('homeSections');
         if (!container) return;
-        container.innerHTML = '<div style="color:#888;font-size:13px;padding:12px 2px;">加载推荐中…</div>';
+        // 1) 先用上次成功缓存的推荐垫上（弱网/接口抖动时首页也不空着）
+        var rendered = false;
         try {
-            // 部署刚切换/源站偶发超时会让第一次请求拿到空结果，自动重试一次再放弃
-            var data = null;
-            for (var attempt = 0; attempt < 2; attempt++) {
-                try {
-                    var resp = await fetch('/api/home', { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
-                    data = await resp.json();
-                } catch (fetchErr) {
-                    data = null;
-                }
-                if (data && data.ok && Array.isArray(data.sections) && data.sections.length) break;
-                if (attempt === 0) {
-                    await new Promise(function (r) { setTimeout(r, 2500); });
+            var cachedRaw = localStorage.getItem(HOME_LS_KEY);
+            if (cachedRaw) {
+                var cachedData = JSON.parse(cachedRaw);
+                if (cachedData && cachedData.ok && Array.isArray(cachedData.sections) && cachedData.sections.length) {
+                    rendered = renderSections(container, cachedData);
                 }
             }
-            if (!data || !data.ok || !Array.isArray(data.sections) || !data.sections.length) {
-                container.innerHTML = '<div style="color:#f87171;font-size:13.5px;padding:12px 2px;">' +
-                    '推荐暂时加载不出来' + (data && data.error ? '：' + esc(data.error) : '') + '</div>';
+        } catch (ignore) { /* 本地缓存不可用就走网络 */ }
+        if (!rendered) {
+            container.innerHTML = '<div style="color:#888;font-size:13px;padding:12px 2px;">加载推荐中…</div>';
+        }
+        // 2) 再拉最新数据：最多 4 次，间隔递增；成功就存本地并重渲染
+        var lastReason = '';
+        var delays = [0, 1500, 3000, 5000];
+        for (var attempt = 0; attempt < delays.length; attempt++) {
+            if (delays[attempt] > 0) {
+                await new Promise(function (r) { setTimeout(r, delays[attempt]); });
+            }
+            var data = null;
+            try {
+                var resp = await fetch('/api/home', { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+                if (!resp.ok) {
+                    lastReason = '服务器返回 ' + resp.status;
+                } else {
+                    data = await resp.json();
+                }
+            } catch (fetchErr) {
+                lastReason = '网络请求失败' + (fetchErr && fetchErr.message ? '（' + fetchErr.message + '）' : '');
+                data = null;
+            }
+            if (data && data.ok && Array.isArray(data.sections) && data.sections.length) {
+                try { localStorage.setItem(HOME_LS_KEY, JSON.stringify(data)); } catch (ignore) {}
+                renderSections(container, data);
                 return;
             }
-            var sourceKey = data.source ? data.source.key : '';
-            container.innerHTML = '';
-            data.sections.forEach(function (section) {
-                if (section.items && section.items.length) {
-                    container.appendChild(makeSection(section, sourceKey));
-                }
-            });
-            if (!container.children.length) {
-                container.innerHTML = '<div style="color:#888;font-size:13.5px;padding:12px 2px;">暂时没有可显示的推荐内容</div>';
-            }
-        } catch (e) {
-            container.innerHTML = '<div style="color:#f87171;font-size:13.5px;padding:12px 2px;">推荐加载失败，请刷新重试</div>';
+            if (data && data.error) lastReason = data.error;
+            else if (data && !data.ok) lastReason = '接口未返回可用数据';
+            else if (data) lastReason = '接口返回的分区为空';
+        }
+        // 3) 全失败：有垫底缓存就继续显示缓存；没有才报错，并写明原因方便定位
+        if (!rendered) {
+            container.innerHTML = '<div style="color:#f87171;font-size:13.5px;padding:12px 2px;">' +
+                '推荐暂时加载不出来' + (lastReason ? '：' + esc(lastReason) : '') + '</div>';
         }
     }
 

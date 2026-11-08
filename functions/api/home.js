@@ -392,6 +392,10 @@ export async function onRequestGet(context) {
             } else {
                 sections = stripMeta(sections);
             }
+            // time 只用于服务端排序，不下发给前端，减小响应体积（弱网更友好）
+            sections.forEach((sec) => {
+                (sec.items || []).forEach((item) => { delete item.time; });
+            });
             return jsonResponse({
                 ok: true,
                 source: { key: source.key, name: source.name },
