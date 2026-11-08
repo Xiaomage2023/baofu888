@@ -57,6 +57,16 @@ async function verifyPassword(password) {
                 timestamp: Date.now(),
                 passwordHash: correctHash
             }));
+            localStorage.setItem('passwordHash', correctHash);
+            // 顺带把服务端门禁的授权 cookie 也种上（functions/api/site-login.js），
+            // 失败不阻断原有前端验证流程
+            try {
+                fetch('/api/site-login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: password })
+                }).catch(function () { /* 忽略 */ });
+            } catch (e) { /* 忽略 */ }
         }
         return isValid;
     } catch (error) {
@@ -223,15 +233,44 @@ async function handlePasswordSubmit() {
 }
 
 /**
+ * 向服务端门禁查询登录状态（functions/api/site-login.js）。
+ * 已授权（或未设密码无需授权）时，把本地验证状态同步为当前
+ * window.__ENV__.PASSWORD 对应的哈希，这样后续原有逻辑不会再弹窗。
+ * 查询失败时静默跳过，走原有逻辑。
+ */
+async function syncServerSiteAuth() {
+    try {
+        const resp = await fetch('/api/site-login');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!data || (data.required && !data.authed)) return;
+        const currentHash = window.__ENV__ && window.__ENV__.PASSWORD;
+        if (typeof currentHash === 'string' && currentHash.length === 64 && !/^0+$/.test(currentHash)) {
+            localStorage.setItem(PASSWORD_CONFIG.localStorageKey, JSON.stringify({
+                verified: true,
+                timestamp: Date.now(),
+                passwordHash: currentHash
+            }));
+            localStorage.setItem('passwordHash', currentHash);
+        }
+    } catch (error) {
+        // 忽略：走原有前端验证逻辑
+    }
+}
+
+/**
  * 初始化密码验证系统
  */
-function initPasswordProtection() {
+async function initPasswordProtection() {
+    // 先向服务端门禁同步一次登录状态，已授权时不弹窗
+    await syncServerSiteAuth();
+
     // 如果需要强制设置密码，显示警告弹窗
     if (isPasswordRequired()) {
         showPasswordModal();
         return;
     }
-    
+
     // 如果设置了密码但用户未验证，显示密码输入框
     if (isPasswordProtected() && !isPasswordVerified()) {
         showPasswordModal();

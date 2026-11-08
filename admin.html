@@ -64,14 +64,30 @@
 
     <!-- 登录 -->
     <div id="loginCard" class="card">
-        <h2>登录</h2>
-        <label for="loginPassword">网站访问密码</label>
-        <input type="password" id="loginPassword" placeholder="输入当前网站访问密码" autocomplete="current-password">
+        <h2>管理员登录</h2>
+        <label for="loginUsername">管理员账号</label>
+        <input type="text" id="loginUsername" value="admin" placeholder="管理员账号" autocomplete="username">
+        <label for="loginPassword">管理员密码</label>
+        <input type="password" id="loginPassword" placeholder="输入管理员密码" autocomplete="current-password">
         <button id="loginBtn">登录</button>
-        <p class="hint">用你平时打开网站时输入的访问密码登录。首次使用请先在部署平台（Cloudflare Pages）设置 PASSWORD 环境变量。</p>
+        <p class="hint">后台用独立的管理员账号密码登录，和网站访问密码不是一回事。还没设置独立管理员账号时（引导模式）：账号填 admin、密码填网站访问密码，登录后请立即在「⓪ 管理员账号」里设置独立账号。首次使用请先在部署平台（Cloudflare Pages）设置 PASSWORD 环境变量。</p>
     </div>
 
     <div id="adminMain" class="hidden">
+        <div id="bootstrapWarn" class="msg err hidden">当前用站点密码引导登录，请立即设置独立管理员账号，设置后站点密码不能再进后台。</div>
+
+        <!-- ⓪ 管理员账号 -->
+        <div class="card">
+            <h2>⓪ 管理员账号</h2>
+            <p class="hint">状态：<span id="adminAccountStatus">-</span></p>
+            <label for="adminUsername">管理员账号（至少 2 个字符）</label>
+            <input type="text" id="adminUsername" placeholder="例如：admin 或你的名字" autocomplete="username">
+            <label for="adminNewPassword">管理员密码（至少 4 位）</label>
+            <input type="password" id="adminNewPassword" placeholder="设置/修改管理员密码" autocomplete="new-password">
+            <button id="setAdminBtn">保存管理员账号</button>
+            <p class="hint">管理员账号只用于登录本后台，和网站访问密码相互独立：改这里不影响访客进站，改 ① 的访问密码也不影响管理员登录。设置后，引导模式（admin + 站点密码）立即失效。</p>
+        </div>
+
         <!-- ① 网站访问密码 -->
         <div class="card">
             <h2>① 网站访问密码</h2>

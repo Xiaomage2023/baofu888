@@ -5,12 +5,16 @@
 // 数据存储（KV 绑定名：TV_KV）：
 //   tv:sources -> { custom: [{key,name,api,detail}], disabled: [key...] }
 //   tv:site    -> { passwordHash, siteName }
+//   tv:admin   -> { username, passwordHash }   独立管理员账号
 //
-// 鉴权：
+// 鉴权（管理员账号与站点访问密码相互独立）：
 //   有效密码哈希 effectiveHash = KV tv:site.passwordHash（若有）
-//   否则 sha256(env.PASSWORD || '')。
-//   login 用密码换 token；token = sha256(effectiveHash + ':baofu-admin-v1')，
-//   改密码后旧 token 自动失效。
+//   否则 sha256(env.PASSWORD || '')。这是“站点访问密码”，与管理员无关。
+//   login 用 {username, password} 换 token，token = sha256(token 基 + ':baofu-admin-v1')。
+//   token 基：tv:admin 存在时 = tv:admin.passwordHash（只认独立管理员账号）；
+//   不存在时为引导模式，基 = 'bootstrap:' + effectiveHash，只能用
+//   账号 admin + 站点访问密码登录。一旦设置了独立管理员账号，
+//   引导 token 和引导登录立即失效。
 
 import { sha256 } from '../../js/sha256.js';
 
@@ -115,8 +119,46 @@ async function getEffectiveHash(env) {
     return { hash, source: 'env', site };
 }
 
-async function makeToken(effectiveHash) {
-    return sha256(effectiveHash + ':baofu-admin-v1');
+async function readAdmin(env) {
+    if (!env.TV_KV) return null;
+    try {
+        const raw = await env.TV_KV.get('tv:admin');
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed.username === 'string' && parsed.username
+                && typeof parsed.passwordHash === 'string' && parsed.passwordHash) {
+                return { username: parsed.username, passwordHash: parsed.passwordHash };
+            }
+        }
+    } catch (e) { /* 忽略损坏的数据 */ }
+    return null;
+}
+
+async function writeAdmin(env, admin) {
+    await env.TV_KV.put('tv:admin', JSON.stringify(admin));
+}
+
+const ADMIN_TOKEN_SALT = ':baofu-admin-v1';
+
+async function makeTokenFromBase(base) {
+    return sha256(base + ADMIN_TOKEN_SALT);
+}
+
+// 当前鉴权上下文：决定 token 的计算基。
+// tv:admin 存在 → 基 = 管理员密码哈希；否则引导模式 → 基 = 'bootstrap:' + 站点有效哈希；
+// 两者都没有 → tokenBase 为 null（无法登录）。
+async function getAuthContext(env) {
+    const { hash: effectiveHash, source } = await getEffectiveHash(env);
+    const admin = await readAdmin(env);
+    let tokenBase = null;
+    if (admin) tokenBase = admin.passwordHash;
+    else if (effectiveHash) tokenBase = 'bootstrap:' + effectiveHash;
+    return { effectiveHash, passwordSource: source, admin, tokenBase };
+}
+
+async function expectedToken(env) {
+    const ctx = await getAuthContext(env);
+    return ctx.tokenBase ? await makeTokenFromBase(ctx.tokenBase) : null;
 }
 
 // ---------- 资源源解析（batchAddSources / importFromUrl 共用） ----------
@@ -254,11 +296,16 @@ async function buildState(env) {
     const { hash, source } = await getEffectiveHash(env);
     const site = await readSite(env);
     const store = await readSources(env);
+    const admin = await readAdmin(env);
     return {
         ok: true,
         hasKv: !!env.TV_KV,
         passwordSource: hash ? source : 'env',
         siteName: site.siteName || '',
+        admin: {
+            custom: !!admin,
+            username: admin ? admin.username : null
+        },
         sources: {
             custom: store.custom,
             disabled: store.disabled,
@@ -320,25 +367,40 @@ export async function onRequestPost(context) {
 
     const { hash: effectiveHash } = await getEffectiveHash(env);
 
-    // login 不需要 token
+    // login 不需要 token：用管理员账号 + 密码登录
     if (action === 'login') {
+        const admin = await readAdmin(env);
+        const username = typeof body.username === 'string' ? body.username.trim() : '';
+        const password = typeof body.password === 'string' ? body.password : '';
+        const inputHash = password ? await sha256(password) : '';
+
+        if (admin) {
+            // 已有独立管理员账号：只认它，站点访问密码不能再进后台
+            if (!inputHash || username !== admin.username || inputHash !== admin.passwordHash) {
+                return jsonResponse({ ok: false, error: '管理员账号或密码不正确' }, 401);
+            }
+            return jsonResponse({ ok: true, token: await makeTokenFromBase(admin.passwordHash) });
+        }
+
+        // 引导模式：还没有独立管理员账号，用 admin + 站点访问密码登录，
+        // 登录后应立即通过 setAdmin 设置独立管理员账号
         if (!effectiveHash) {
             return jsonResponse({ ok: false, error: 'NO_PASSWORD', message: NO_PASSWORD_MESSAGE });
         }
-        const password = typeof body.password === 'string' ? body.password : '';
-        const inputHash = password ? await sha256(password) : '';
-        if (!inputHash || inputHash !== effectiveHash) {
-            return jsonResponse({ ok: false, error: '密码不正确' }, 401);
+        if (username !== 'admin' || !inputHash || inputHash !== effectiveHash) {
+            return jsonResponse({ ok: false, error: '管理员账号或密码不正确（引导模式：账号填 admin，密码填站点访问密码）' }, 401);
         }
-        return jsonResponse({ ok: true, token: await makeToken(effectiveHash) });
+        return jsonResponse({ ok: true, token: await makeTokenFromBase('bootstrap:' + effectiveHash), bootstrap: true });
     }
 
-    // 其余动作都要校验 token
-    if (!effectiveHash || !body.token || body.token !== (await makeToken(effectiveHash))) {
+    // 其余动作都要校验 token：按“当前基”重算期望 token
+    //（tv:admin 存在就只认它，设置独立管理员账号后引导 token 立即失效）
+    const expected = await expectedToken(env);
+    if (!expected || !body.token || body.token !== expected) {
         return jsonResponse({ ok: false, error: '未登录或登录已失效，请重新登录' }, 401);
     }
 
-    const needsKv = ['setPassword', 'resetPassword', 'setSiteName', 'addSource', 'batchAddSources', 'importFromUrl', 'updateSource', 'deleteSource', 'toggleSource'];
+    const needsKv = ['setAdmin', 'setPassword', 'resetPassword', 'setSiteName', 'addSource', 'batchAddSources', 'importFromUrl', 'updateSource', 'deleteSource', 'toggleSource'];
     if (needsKv.includes(action) && !env.TV_KV) {
         return kvNotBound();
     }
@@ -349,6 +411,25 @@ export async function onRequestPost(context) {
                 return jsonResponse(await buildState(env));
             }
 
+            case 'setAdmin': {
+                const username = typeof body.username === 'string' ? body.username.trim() : '';
+                const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';
+                if (username.length < 2) {
+                    return jsonResponse({ ok: false, error: '管理员账号至少 2 个字符' });
+                }
+                if (newPassword.length < 4) {
+                    return jsonResponse({ ok: false, error: '管理员密码至少 4 位' });
+                }
+                const adminRec = { username, passwordHash: await sha256(newPassword) };
+                await writeAdmin(env, adminRec);
+                // 返回按新基算出的 token，前端无缝续用；旧的引导 token 同时失效
+                return jsonResponse({
+                    ok: true,
+                    token: await makeTokenFromBase(adminRec.passwordHash),
+                    admin: { custom: true, username }
+                });
+            }
+
             case 'setPassword': {
                 const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';
                 if (newPassword.length < 4) {
@@ -357,8 +438,12 @@ export async function onRequestPost(context) {
                 const site = await readSite(env);
                 site.passwordHash = await sha256(newPassword);
                 await writeSite(env, site);
-                // 密码已变，返回基于新哈希的新 token，前端可无感续用
-                return jsonResponse({ ok: true, token: await makeToken(site.passwordHash), passwordSource: 'kv' });
+                // 站点密码变了，但 token 基按当前鉴权状态重算：
+                // 有独立管理员账号时基不变；引导模式时基随新站点密码更新
+                const ctx = await getAuthContext(env);
+                const result = { ok: true, passwordSource: 'kv' };
+                if (ctx.tokenBase) result.token = await makeTokenFromBase(ctx.tokenBase);
+                return jsonResponse(result);
             }
 
             case 'resetPassword': {
@@ -366,10 +451,15 @@ export async function onRequestPost(context) {
                 delete site.passwordHash;
                 await writeSite(env, site);
                 const envPassword = env.PASSWORD || '';
+                const ctx = await getAuthContext(env);
                 if (!envPassword) {
-                    return jsonResponse({ ok: true, warning: '已清除后台密码，但部署平台也没有设置 PASSWORD，站点将没有有效密码，请尽快在部署平台设置 PASSWORD 或重新在后台设密码。' });
+                    const result = { ok: true, warning: '已清除后台密码，但部署平台也没有设置 PASSWORD，站点将没有有效密码，请尽快在部署平台设置 PASSWORD 或重新在后台设密码。' };
+                    if (ctx.tokenBase) result.token = await makeTokenFromBase(ctx.tokenBase);
+                    return jsonResponse(result);
                 }
-                return jsonResponse({ ok: true, token: await makeToken(await sha256(envPassword)), passwordSource: 'env' });
+                const result = { ok: true, passwordSource: 'env' };
+                if (ctx.tokenBase) result.token = await makeTokenFromBase(ctx.tokenBase);
+                return jsonResponse(result);
             }
 
             case 'setSiteName': {

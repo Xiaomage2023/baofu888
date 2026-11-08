@@ -5,6 +5,7 @@
 
     var TOKEN_KEY = 'baofuAdminToken';
     var state = null;
+    var bootstrapLogin = false; // 本次是否以引导模式（admin + 站点密码）登录
 
     function $(id) { return document.getElementById(id); }
 
@@ -59,17 +60,20 @@
     // ---------- 登录 ----------
 
     async function doLogin() {
+        var username = $('loginUsername').value.trim();
         var password = $('loginPassword').value;
-        if (!password) { globalMsg('先输入访问密码。', 'err'); return; }
+        if (!username) { globalMsg('先输入管理员账号（引导模式填 admin）。', 'err'); return; }
+        if (!password) { globalMsg('先输入管理员密码（引导模式填站点访问密码）。', 'err'); return; }
         $('loginBtn').disabled = true;
         try {
-            var data = await callAdmin({ action: 'login', password: password });
+            var data = await callAdmin({ action: 'login', username: username, password: password });
             if (!data.ok) {
                 // 后端原文提示（如未设置 PASSWORD 的说明）原样显示
                 globalMsg(data.message || data.error || '登录失败', 'err');
                 return;
             }
             setToken(data.token);
+            bootstrapLogin = !!data.bootstrap;
             globalMsg('', 'info');
             await enterAdmin();
         } catch (e) {
@@ -108,6 +112,18 @@
 
     function renderState() {
         if (!state) return;
+
+        // ⓪ 管理员账号状态 + 引导模式警告
+        var adminInfo = state.admin || { custom: false, username: null };
+        $('adminAccountStatus').textContent = adminInfo.custom
+            ? '已设置独立管理员账号：' + adminInfo.username
+            : '尚未设置独立管理员账号（当前为引导模式：admin + 站点访问密码可登录）';
+        if (adminInfo.custom && !$('adminUsername').value) {
+            $('adminUsername').value = adminInfo.username || '';
+        }
+        var showBootstrapWarn = !adminInfo.custom && (bootstrapLogin || !!getToken());
+        $('bootstrapWarn').classList.toggle('hidden', !showBootstrapWarn);
+
         $('passwordSource').textContent = state.hasKv
             ? (state.passwordSource === 'kv' ? '后台保存（KV）' : '部署平台环境变量 PASSWORD')
             : '部署平台环境变量 PASSWORD（KV 未绑定，后台改动无法保存）';
@@ -190,6 +206,22 @@
 
     // ---------- 各表单动作 ----------
 
+    async function doSetAdmin() {
+        var username = $('adminUsername').value.trim();
+        var newPassword = $('adminNewPassword').value;
+        if (username.length < 2) { globalMsg('管理员账号至少 2 个字符。', 'err'); return; }
+        if (!newPassword || newPassword.length < 4) { globalMsg('管理员密码至少 4 位。', 'err'); return; }
+        try {
+            var data = await authedCall({ action: 'setAdmin', username: username, newPassword: newPassword });
+            if (!data.ok) { globalMsg(data.message || data.error || '保存失败', 'err'); return; }
+            if (data.token) setToken(data.token);
+            bootstrapLogin = false;
+            $('adminNewPassword').value = '';
+            globalMsg('管理员账号已保存：' + username + '。之后登录后台只用这个账号，站点访问密码不能再进后台。', 'ok');
+            await refreshState();
+        } catch (e) { globalMsg('保存失败：' + e.message, 'err'); }
+    }
+
     async function doSetPassword() {
         var newPassword = $('newPassword').value;
         if (!newPassword || newPassword.length < 4) { globalMsg('新密码至少 4 位。', 'err'); return; }
@@ -198,13 +230,13 @@
             if (!data.ok) { globalMsg(data.message || data.error || '保存失败', 'err'); return; }
             if (data.token) setToken(data.token);
             $('newPassword').value = '';
-            globalMsg('新密码已保存。下次打开网站和登录后台都用新密码。', 'ok');
+            globalMsg('新访问密码已保存。下次打开网站用新密码进站；后台登录用管理员账号，不受影响。', 'ok');
             await refreshState();
         } catch (e) { globalMsg('保存失败：' + e.message, 'err'); }
     }
 
     async function doResetPassword() {
-        if (!confirm('恢复为环境变量密码？后台保存的密码将被删除，之后用部署平台 PASSWORD 的值登录。')) return;
+        if (!confirm('恢复为环境变量密码？后台保存的访问密码将被删除，之后打开网站用部署平台 PASSWORD 的值进站（后台管理员登录不受影响）。')) return;
         try {
             var data = await authedCall({ action: 'resetPassword' });
             if (!data.ok) { globalMsg(data.message || data.error || '操作失败', 'err'); return; }
@@ -275,7 +307,9 @@
 
     function bind() {
         $('loginBtn').addEventListener('click', doLogin);
+        $('loginUsername').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
         $('loginPassword').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+        $('setAdminBtn').addEventListener('click', doSetAdmin);
         $('setPasswordBtn').addEventListener('click', doSetPassword);
         $('resetPasswordBtn').addEventListener('click', doResetPassword);
         $('setSiteNameBtn').addEventListener('click', doSetSiteName);
@@ -285,6 +319,7 @@
         $('importUrlBtn').addEventListener('click', doImportUrl);
         $('logoutBtn').addEventListener('click', function () {
             setToken('');
+            bootstrapLogin = false;
             showLogin();
             globalMsg('已退出登录。', 'info');
         });
